@@ -96,7 +96,11 @@ public class SearchPanel extends MapperPanel implements ItemListener {
                 AreaSaveObject aso = AreaDataPersister.loadData( this.engine.getBaseDir(), areaName );
                 Collection<Room> areaRooms = aso.getGraph().getVertices();
                 for (Room room : areaRooms) {
-                    if (room.getLongDesc().toLowerCase().contains( text.toLowerCase() ) ||
+                	if (room.getShortDesc() == null || room.getLongDesc() == null ) {
+                		// in case of bad room data, just skip it
+                		continue;
+                	}
+                	if (room.getLongDesc().toLowerCase().contains( text.toLowerCase() ) ||
                             room.getShortDesc().toLowerCase().contains( text.toLowerCase() )) {
                         model.addElement( new SearchResultItem( room ) );
                         
