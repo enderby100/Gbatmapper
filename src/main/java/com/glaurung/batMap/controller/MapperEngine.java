@@ -178,7 +178,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
             }
 
         }
-        if(mazemode){
+        if (currentRoom != null && mazemode) {
             currentRoom.useExit(exitUsed);
         }
 
