@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="batMapper" default="jar" basedir=".">
+    <description>
+        BatMapper - Ant Build Script
+    </description>
+
+    <!-- Project properties -->
+    <property name="project.name" value="batUtils"/>
+    <property name="project.version" value="1.6.3"/>
+    <property name="src.dir" location="src/main/java"/>
+    <property name="resources.dir" location="src/main/resources"/>
+    <property name="test.src.dir" location="src/test/java"/>
+    <property name="build.dir" location="target"/>
+    <property name="build.classes.dir" location="${build.dir}/classes"/>
+    <property name="build.test.dir" location="${build.dir}/test-classes"/>
+    <property name="lib.dir" location="${build.dir}/lib"/>
+    <property name="output.dir" location="C:/Users/eprice/batclient/plugins"/>
+    <property name="jar.name" value="${project.name}-${project.version}-full.jar"/>
+
+    <!-- Maven Central URLs for dependencies -->
+    <property name="maven.central" value="https://repo1.maven.org/maven2"/>
+    
+    <!-- Dependency versions -->
+    <property name="jung.version" value="2.0.1"/>
+    <property name="commons-io.version" value="2.7"/>
+    <property name="junit.version" value="4.13.1"/>
+    <property name="collections-generic.version" value="4.01"/>
+    <property name="colt.version" value="1.2.0"/>
+    <property name="concurrent.version" value="1.3.4"/>
+    <property name="hamcrest.version" value="1.3"/>
+
+    <!-- Classpath for compilation -->
+    <path id="compile.classpath">
+        <fileset dir="${lib.dir}" includes="*.jar"/>
+    </path>
+
+    <!-- Classpath for tests -->
+    <path id="test.classpath">
+        <path refid="compile.classpath"/>
+        <pathelement location="${build.classes.dir}"/>
+        <pathelement location="${build.test.dir}"/>
+    </path>
+
+    <!-- Target: init - create directories -->
+    <target name="init">
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${build.classes.dir}"/>
+        <mkdir dir="${build.test.dir}"/>
+        <mkdir dir="${lib.dir}"/>
+        <mkdir dir="${output.dir}"/>
+    </target>
+
+    <!-- Target: download-deps - download dependencies from Maven Central -->
+    <target name="download-deps" depends="init" description="Download dependencies from Maven Central">
+        <echo message="Downloading dependencies..."/>
+        
+        <!-- JUNG dependencies -->
+        <get src="${maven.central}/net/sf/jung/jung-graph-impl/${jung.version}/jung-graph-impl-${jung.version}.jar"
+             dest="${lib.dir}/jung-graph-impl-${jung.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+        
+        <get src="${maven.central}/net/sf/jung/jung-api/${jung.version}/jung-api-${jung.version}.jar"
+             dest="${lib.dir}/jung-api-${jung.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+        
+        <get src="${maven.central}/net/sf/jung/jung-algorithms/${jung.version}/jung-algorithms-${jung.version}.jar"
+             dest="${lib.dir}/jung-algorithms-${jung.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+        
+        <get src="${maven.central}/net/sf/jung/jung-visualization/${jung.version}/jung-visualization-${jung.version}.jar"
+             dest="${lib.dir}/jung-visualization-${jung.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+
+        <!-- JUNG transitive dependencies -->
+        <get src="${maven.central}/net/sourceforge/collections/collections-generic/${collections-generic.version}/collections-generic-${collections-generic.version}.jar"
+             dest="${lib.dir}/collections-generic-${collections-generic.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+        
+        <get src="${maven.central}/colt/colt/${colt.version}/colt-${colt.version}.jar"
+             dest="${lib.dir}/colt-${colt.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+        
+        <get src="${maven.central}/concurrent/concurrent/${concurrent.version}/concurrent-${concurrent.version}.jar"
+             dest="${lib.dir}/concurrent-${concurrent.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+
+        <!-- Commons IO -->
+        <get src="${maven.central}/commons-io/commons-io/${commons-io.version}/commons-io-${commons-io.version}.jar"
+             dest="${lib.dir}/commons-io-${commons-io.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+
+        <!-- JUnit (for tests) -->
+        <get src="${maven.central}/junit/junit/${junit.version}/junit-${junit.version}.jar"
+             dest="${lib.dir}/junit-${junit.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+        
+        <get src="${maven.central}/org/hamcrest/hamcrest-core/${hamcrest.version}/hamcrest-core-${hamcrest.version}.jar"
+             dest="${lib.dir}/hamcrest-core-${hamcrest.version}.jar" 
+             skipexisting="true" 
+             verbose="true"/>
+
+        <!-- Copy bat_interfaces from local repo -->
+        <copy file="repo/bat/bat_interfaces/1/bat_interfaces-1.jar" 
+              todir="${lib.dir}" 
+              verbose="true"/>
+        
+        <echo message="Dependencies downloaded successfully"/>
+    </target>
+
+    <!-- Target: compile - compile the source code -->
+    <target name="compile" depends="download-deps" description="Compile the source code">
+        <echo message="Compiling source files..."/>
+        <javac srcdir="${src.dir}" 
+               destdir="${build.classes.dir}" 
+               source="1.8" 
+               target="1.8"
+               encoding="UTF-8"
+               includeantruntime="false"
+               debug="true">
+            <classpath refid="compile.classpath"/>
+        </javac>
+        
+        <!-- Copy resources -->
+        <copy todir="${build.classes.dir}" verbose="true">
+            <fileset dir="${resources.dir}"/>
+        </copy>
+        
+        <echo message="Compilation complete"/>
+    </target>
+
+    <!-- Target: compile-tests - compile test code -->
+    <target name="compile-tests" depends="compile" description="Compile the test code">
+        <echo message="Compiling test files..."/>
+        <javac srcdir="${test.src.dir}" 
+               destdir="${build.test.dir}" 
+               source="1.8" 
+               target="1.8"
+               encoding="UTF-8"
+               includeantruntime="false"
+               debug="true">
+            <classpath refid="test.classpath"/>
+        </javac>
+        <echo message="Test compilation complete"/>
+    </target>
+
+    <!-- Target: test - run tests -->
+    <target name="test" depends="compile-tests" description="Run unit tests">
+        <echo message="Running tests..."/>
+        <junit printsummary="yes" haltonfailure="no" fork="yes">
+            <classpath refid="test.classpath"/>
+            <formatter type="plain" usefile="false"/>
+            <batchtest>
+                <fileset dir="${test.src.dir}">
+                    <include name="**/*Test*.java"/>
+                </fileset>
+            </batchtest>
+        </junit>
+    </target>
+
+    <!-- Target: jar - create a fat JAR with all dependencies -->
+    <target name="jar" depends="compile" description="Create a fat JAR with all dependencies">
+        <echo message="Creating JAR with all dependencies..."/>
+        
+        <!-- First create the fat JAR -->
+        <jar destfile="${output.dir}/${jar.name}.temp" duplicate="preserve" filesetmanifest="skip">
+            <!-- Include compiled classes -->
+            <fileset dir="${build.classes.dir}">
+                <include name="**/*"/>
+            </fileset>
+            
+            <!-- Include all dependency JARs -->
+            <zipgroupfileset dir="${lib.dir}" excludes="junit-*.jar,hamcrest-*.jar">
+                <include name="*.jar"/>
+            </zipgroupfileset>
+            
+            <!-- Manifest -->
+            <manifest>
+                <attribute name="Sealed" value="false"/>
+                <attribute name="Built-By" value="${user.name}"/>
+                <attribute name="Implementation-Title" value="${project.name}"/>
+                <attribute name="Implementation-Version" value="${project.version}"/>
+            </manifest>
+        </jar>
+        
+        <!-- Now recreate the JAR excluding signature files -->
+        <jar destfile="${output.dir}/${jar.name}" filesetmanifest="skip">
+            <zipfileset src="${output.dir}/${jar.name}.temp">
+                <exclude name="META-INF/*.SF"/>
+                <exclude name="META-INF/*.DSA"/>
+                <exclude name="META-INF/*.RSA"/>
+                <exclude name="META-INF/INDEX.LIST"/>
+            </zipfileset>
+            
+            <!-- Manifest -->
+            <manifest>
+                <attribute name="Sealed" value="false"/>
+                <attribute name="Built-By" value="${user.name}"/>
+                <attribute name="Implementation-Title" value="${project.name}"/>
+                <attribute name="Implementation-Version" value="${project.version}"/>
+            </manifest>
+        </jar>
+        
+        <!-- Clean up temporary file -->
+        <delete file="${output.dir}/${jar.name}.temp"/>
+        
+        <echo message="JAR created at: ${output.dir}/${jar.name}"/>
+    </target>
+
+    <!-- Target: clean - remove build artifacts -->
+    <target name="clean" description="Clean build artifacts">
+        <echo message="Cleaning build artifacts..."/>
+        <delete dir="${build.dir}"/>
+        <delete file="${output.dir}/${jar.name}"/>
+        <echo message="Clean complete"/>
+    </target>
+
+    <!-- Target: rebuild - clean and build -->
+    <target name="rebuild" depends="clean,jar" description="Clean and rebuild the project"/>
+
+</project>
