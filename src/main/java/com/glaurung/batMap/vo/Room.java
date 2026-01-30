@@ -1,6 +1,7 @@
 package com.glaurung.batMap.vo;
 
 import java.awt.Color;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.HashSet;
@@ -8,7 +9,7 @@ import java.util.Set;
 
 public class Room implements Serializable {
 
-
+    @Serial
     private static final long serialVersionUID = 9036581185666106041L;
     private String id;
     private String shortDesc;
@@ -25,19 +26,18 @@ public class Room implements Serializable {
     private String label;
     private Set<String> usedExits = new HashSet<>();
 
-
-    public Room( String shortDesc, String id ) {
+    public Room(String shortDesc, String id) {
         this.shortDesc = shortDesc;
         this.id = id;
     }
 
-    public Room( String shortDesc, String id, Area area ) {
+    public Room(String shortDesc, String id, Area area) {
         this.shortDesc = shortDesc;
         this.id = id;
         this.area = area;
     }
 
-    public Room( String id, Area area ) {
+    public Room(String id, Area area) {
         this.id = id;
         this.area = area;
     }
@@ -46,7 +46,7 @@ public class Room implements Serializable {
         return id;
     }
 
-    public void setId( String id ) {
+    public void setId(String id) {
         this.id = id;
     }
 
@@ -54,7 +54,7 @@ public class Room implements Serializable {
         return shortDesc;
     }
 
-    public void setShortDesc( String shortDesc ) {
+    public void setShortDesc(String shortDesc) {
         this.shortDesc = shortDesc;
     }
 
@@ -62,46 +62,39 @@ public class Room implements Serializable {
         return longDesc;
     }
 
-    public void setLongDesc( String longDesc ) {
+    public void setLongDesc(String longDesc) {
         this.longDesc = longDesc;
     }
-
 
     public boolean isAreaEntrance() {
         return areaEntrance;
     }
 
-
-    public void setAreaEntrance( boolean areaEntrance ) {
+    public void setAreaEntrance(boolean areaEntrance) {
         this.areaEntrance = areaEntrance;
     }
-
 
     public boolean isCurrent() {
         return current;
     }
 
-
-    public void setCurrent( boolean current ) {
+    public void setCurrent(boolean current) {
         this.current = current;
     }
-
 
     public boolean isDrawn() {
         return drawn;
     }
 
-
-    public void setDrawn( boolean drawn ) {
+    public void setDrawn(boolean drawn) {
         this.drawn = drawn;
     }
-
 
     public Area getArea() {
         return area;
     }
 
-    public void setArea( Area area ) {
+    public void setArea(Area area) {
         this.area = area;
     }
 
@@ -109,7 +102,7 @@ public class Room implements Serializable {
         return picked;
     }
 
-    public void setPicked( boolean picked ) {
+    public void setPicked(boolean picked) {
         this.picked = picked;
     }
 
@@ -117,7 +110,7 @@ public class Room implements Serializable {
         return exits;
     }
 
-    public void setExits( Set<String> exits ) {
+    public void setExits(Set<String> exits) {
         this.exits = exits;
     }
 
@@ -125,7 +118,7 @@ public class Room implements Serializable {
         return indoors;
     }
 
-    public void setIndoors( boolean indoors ) {
+    public void setIndoors(boolean indoors) {
         this.indoors = indoors;
     }
 
@@ -133,26 +126,27 @@ public class Room implements Serializable {
         return this.shortDesc;
     }
 
-    public boolean equals( Object o ) {
+    public boolean equals(Object o) {
         if (o instanceof Room) {
-            if (this.id.equals( ( (Room) o ).getId() ))
+            Room room = (Room) o;
+            if (this.id.equals(room.getId()))
                 return true;
         }
         return false;
 
     }
 
-    public void setDescs( String shortDesc, String longDesc ) {
+    public void setDescs(String shortDesc, String longDesc) {
         this.shortDesc = shortDesc;
         this.longDesc = longDesc;
     }
 
-    public void addExits( Collection<String> outExits ) {
-        this.exits.addAll( outExits );
+    public void addExits(Collection<String> outExits) {
+        this.exits.addAll(outExits);
     }
 
-    public void addExit( String exit ) {
-        this.exits.add( exit );
+    public void addExit(String exit) {
+        this.exits.add(exit);
     }
 
     public String getNotes() {
@@ -163,38 +157,40 @@ public class Room implements Serializable {
         return color;
     }
 
-    public void setColor( Color color ) {
+    public void setColor(Color color) {
         this.color = color;
     }
 
-    public void setNotes( String notes ) {
+    public void setNotes(String notes) {
         this.notes = notes;
     }
 
-    public void setLabel(String label){
+    public void setLabel(String label) {
         this.label = label;
     }
 
-    public String getLabel(){
+    public String getLabel() {
         return this.label;
     }
 
-    public void useExit(String exit){
-        if(usedExits == null){
+    public void useExit(String exit) {
+        if (usedExits == null) {
             usedExits = new HashSet<>();
         }
         this.usedExits.add(exit);
     }
-    public boolean allExitsHaveBeenUSed(){
-        if(usedExits == null){
+
+    public boolean allExitsHaveBeenUSed() {
+        if (usedExits == null) {
             usedExits = new HashSet<>();
         }
-        if(exits.containsAll(usedExits) && usedExits.containsAll(exits)){
+        if (exits.containsAll(usedExits) && usedExits.containsAll(exits)) {
             return true;
         }
         return false;
     }
-    public void resetExitUsage(){
+
+    public void resetExitUsage() {
         this.usedExits = new HashSet<>();
     }
 }

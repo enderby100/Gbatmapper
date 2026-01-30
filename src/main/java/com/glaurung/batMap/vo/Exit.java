@@ -1,70 +1,70 @@
 package com.glaurung.batMap.vo;
 
+import java.io.Serial;
 import java.io.Serializable;
 
 public class Exit implements Serializable {
 
-
+    @Serial
     private static final long serialVersionUID = 3983564665752135097L;
     private String exit;
     private String compassDir;
     private boolean currentExit;
     public final String TELEPORT = "teleport";
 
-
-    public Exit( String exit ) {
+    public Exit(String exit) {
         this.exit = exit;
-        this.compassDir = checkWhatExitIs( exit );
+        this.compassDir = checkWhatExitIs(exit);
     }
 
-    public static String checkWhatExitIs( String exit ) {
-        if (exit.equalsIgnoreCase( "n" ) || exit.equalsIgnoreCase( "north" ))
+    public static String checkWhatExitIs(String exit) {
+        if (exit.equalsIgnoreCase("n") || exit.equalsIgnoreCase("north"))
             return "n";
-        if (exit.equalsIgnoreCase( "e" ) || exit.equalsIgnoreCase( "east" ))
+        if (exit.equalsIgnoreCase("e") || exit.equalsIgnoreCase("east"))
             return "e";
-        if (exit.equalsIgnoreCase( "s" ) || exit.equalsIgnoreCase( "south" ))
+        if (exit.equalsIgnoreCase("s") || exit.equalsIgnoreCase("south"))
             return "s";
-        if (exit.equalsIgnoreCase( "w" ) || exit.equalsIgnoreCase( "west" ))
+        if (exit.equalsIgnoreCase("w") || exit.equalsIgnoreCase("west"))
             return "w";
-        if (exit.equalsIgnoreCase( "ne" ) || exit.equalsIgnoreCase( "northeast" ))
+        if (exit.equalsIgnoreCase("ne") || exit.equalsIgnoreCase("northeast"))
             return "ne";
-        if (exit.equalsIgnoreCase( "nw" ) || exit.equalsIgnoreCase( "northwest" ))
+        if (exit.equalsIgnoreCase("nw") || exit.equalsIgnoreCase("northwest"))
             return "nw";
-        if (exit.equalsIgnoreCase( "se" ) || exit.equalsIgnoreCase( "southeast" ))
+        if (exit.equalsIgnoreCase("se") || exit.equalsIgnoreCase("southeast"))
             return "se";
-        if (exit.equalsIgnoreCase( "sw" ) || exit.equalsIgnoreCase( "southwest" ))
+        if (exit.equalsIgnoreCase("sw") || exit.equalsIgnoreCase("southwest"))
             return "sw";
-        if (exit.equalsIgnoreCase( "d" ) || exit.equalsIgnoreCase( "down" ))
+        if (exit.equalsIgnoreCase("d") || exit.equalsIgnoreCase("down"))
             return "d";
-        if (exit.equalsIgnoreCase( "u" ) || exit.equalsIgnoreCase( "up" ))
+        if (exit.equalsIgnoreCase("u") || exit.equalsIgnoreCase("up"))
             return "u";
         return null;
     }
 
-    public String getOpposite(){
-        switch( this.compassDir ){
-        case "n":
-            return "south";
-        case "ne":
-            return "southwest";
-        case "e":
-            return "west";
-        case "se":
-            return "northwest";
-        case "s":
-            return "north";
-        case "sw":
-            return "northeast";
-        case "w":
-            return "east";
-        case "nw":
-            return "southeast";
-        case "u":
-            return "down";
-        case "d":
-            return "up";
-        default:
-            return null;
+    public String getOpposite() {
+        switch (this.compassDir) {
+            case "n":
+                return "south";
+            case "ne":
+                return "southwest";
+            case "e":
+                return "west";
+            case "se":
+                return "northwest";
+            case "s":
+                return "north";
+            case "sw":
+                return "northeast";
+            case "w":
+                return "east";
+            case "nw":
+                return "southeast";
+            case "u":
+                return "down";
+            case "d":
+                return "up";
+            default:
+                return null;
         }
 
     }
@@ -73,7 +73,7 @@ public class Exit implements Serializable {
         return exit;
     }
 
-    public void setExit( String exit ) {
+    public void setExit(String exit) {
         this.exit = exit;
     }
 
@@ -89,13 +89,14 @@ public class Exit implements Serializable {
         return currentExit;
     }
 
-    public void setCurrentExit( boolean currentExit ) {
+    public void setCurrentExit(boolean currentExit) {
         this.currentExit = currentExit;
     }
 
-    public boolean equals( Object o ) {
+    public boolean equals(Object o) {
         if (o instanceof Exit) {
-            if (this.exit.equals( ( (Exit) o ).getExit() ))
+            Exit exit1 = (Exit) o;
+            if (this.exit.equals(exit1.getExit()))
                 return true;
         }
         return false;

@@ -1,5 +1,6 @@
 package com.glaurung.batMap.gui.corpses;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.LinkedList;
 import java.util.List;
@@ -9,9 +10,10 @@ public class CorpseModel implements Serializable {
     /**
      *
      */
+    @Serial
     private static final long serialVersionUID = 1L;
 
-    //souls = 5
+    // souls = 5
     public boolean lichdrain = false;
     public boolean kharimsoul = false;
     public boolean kharimSoulCorpse = false;
@@ -19,14 +21,14 @@ public class CorpseModel implements Serializable {
     public boolean ripSoulToKatana = false; // rip soul from corpse
     public boolean arkemile = false; // soul AND corpse actually
 
-    //loot = 5
+    // loot = 5
     public boolean gac = false;
     public boolean ga = false;
     public boolean donate = false;
     public boolean lootCorpse = false;
     public boolean lootGround = false;
 
-    //corpse = 13
+    // corpse = 13
     public boolean eatCorpse = false;
     public boolean barbarianBurn = false;
     public boolean feedCorpseTo = false;
@@ -41,7 +43,7 @@ public class CorpseModel implements Serializable {
     public boolean tin = false;
     public boolean extractEther = false;
 
-    //fucking undead wakes = 8
+    // fucking undead wakes = 8
     public boolean wakeFollow = false;
     public boolean wakeAgro = false;
     public boolean wakeTalk = false;
@@ -58,12 +60,11 @@ public class CorpseModel implements Serializable {
     private String organ2 = "antenna";
     private String etherType = "no_focus";
 
-
     public String getDelim() {
         return delim;
     }
 
-    public void setDelim( String delim ) {
+    public void setDelim(String delim) {
         this.delim = delim;
     }
 
@@ -71,7 +72,7 @@ public class CorpseModel implements Serializable {
         return mountHandle;
     }
 
-    public void setMountHandle( String mountHandle ) {
+    public void setMountHandle(String mountHandle) {
         this.mountHandle = mountHandle;
     }
 
@@ -79,7 +80,7 @@ public class CorpseModel implements Serializable {
         return lootList;
     }
 
-    public void setLootList( List<String> lootList ) {
+    public void setLootList(List<String> lootList) {
         this.lootList = lootList;
     }
 
@@ -133,19 +134,21 @@ public class CorpseModel implements Serializable {
         return organ2;
     }
 
-    public void setOrgan1( String organ ) {
+    public void setOrgan1(String organ) {
         this.organ1 = organ;
     }
 
-    public void setOrgan2( String organ ) {
+    public void setOrgan2(String organ) {
         this.organ2 = organ;
 
     }
+
     public String getEtherType() {
-    	return etherType;
+        return etherType;
     }
-    public void setEtherType( String etherType ) {
-    	this.etherType = etherType;
+
+    public void setEtherType(String etherType) {
+        this.etherType = etherType;
     }
 
 }

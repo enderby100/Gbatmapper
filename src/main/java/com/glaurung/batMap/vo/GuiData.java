@@ -2,18 +2,18 @@ package com.glaurung.batMap.vo;
 
 import java.awt.Dimension;
 import java.awt.Point;
+import java.io.Serial;
 import java.io.Serializable;
 
 public class GuiData implements Serializable {
 
-
+    @Serial
     private static final long serialVersionUID = 1L;
 
-    public GuiData( Point location, Dimension size ) {
+    public GuiData(Point location, Dimension size) {
         this.location = location;
         this.size = size;
     }
-
 
     private Point location;
     private Dimension size;

@@ -1,6 +1,7 @@
 package com.glaurung.batMap.vo;
 
 import java.awt.geom.Point2D;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
@@ -9,8 +10,8 @@ import edu.uci.ics.jung.graph.SparseMultigraph;
 
 public class AreaSaveObject implements Serializable {
 
-
-    private static final long serialVersionUID = - 787030872360880875L;
+    @Serial
+    private static final long serialVersionUID = -787030872360880875L;
 
     private SparseMultigraph<Room, Exit> graph;
     private Map<Room, Point2D> locations;
@@ -25,7 +26,7 @@ public class AreaSaveObject implements Serializable {
         return graph;
     }
 
-    public void setGraph( SparseMultigraph<Room, Exit> graph ) {
+    public void setGraph(SparseMultigraph<Room, Exit> graph) {
         this.graph = graph;
     }
 
@@ -33,7 +34,7 @@ public class AreaSaveObject implements Serializable {
         return locations;
     }
 
-    public void setLocations( Map<Room, Point2D> locations ) {
+    public void setLocations(Map<Room, Point2D> locations) {
         this.locations = locations;
     }
 
@@ -41,9 +42,8 @@ public class AreaSaveObject implements Serializable {
         return fileName;
     }
 
-    public void setFileName( String fileName ) {
+    public void setFileName(String fileName) {
         this.fileName = fileName;
     }
-
 
 }
