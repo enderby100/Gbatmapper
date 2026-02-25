@@ -82,7 +82,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
         rc.setEdgeFillPaintTransformer(new ExitPaintTransformer(vv));
 
         rc.setVertexShapeTransformer(new RoomShape(graph));
-        rc.setVertexIconTransformer(new RoomIconTransformer());
+        rc.setVertexIconTransformer(new RoomIconTransformer(this));
 
         vv.getRenderContext().setLabelOffset(5);
 
@@ -625,6 +625,10 @@ public class MapperEngine implements ItemListener, ComponentListener {
             room.resetExitUsage();
         }
         repaint();
+    }
+
+    public boolean isMazeMode() {
+        return this.mazemode;
     }
 
     public void setReversableDirsMode(boolean enabled) {

@@ -177,7 +177,20 @@ public class Room implements Serializable {
         if (usedExits == null) {
             usedExits = new HashSet<>();
         }
-        this.usedExits.add(exit);
+        // Normalize the exit direction
+        String normalizedExit = Exit.checkWhatExitIs(exit);
+        if (normalizedExit != null) {
+            this.usedExits.add(normalizedExit);
+        } else {
+            this.usedExits.add(exit);
+        }
+    }
+
+    public boolean isExitUsed(String exitDir) {
+        if (usedExits == null) {
+            return false;
+        }
+        return usedExits.contains(exitDir);
     }
 
     public boolean allExitsHaveBeenUSed() {
