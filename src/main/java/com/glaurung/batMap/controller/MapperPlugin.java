@@ -32,6 +32,8 @@ public class MapperPlugin extends BatClientPlugin
     protected static final String COMMAND_APPEND_TO_NOTES = "append";
     protected static final String COMMAND_FIND_DESC = "find";
     protected static final String COMMAND_WHERE = "where";
+    protected static final String COMMAND_FLEE = "flee";
+    protected static final String COMMAND_GO = "go";
     protected static final String COMMAND_WAINO = "wainomode";
     protected static final String ALIAS_WAINO = "/alias " + COMMAND_WAINO + "=$mappercommand " + COMMAND_WAINO;
 
@@ -55,6 +57,7 @@ public class MapperPlugin extends BatClientPlugin
     private final String EXIT_AREA_MESSAGE = "REALM_MAP";
     private String BASEDIR = null;
     private String lastPrintedPathBehindStatus = null;
+    private String lastMapperRoomId = null;
 
     public void loadPlugin() {
         BASEDIR = this.getBaseDirectory();
@@ -136,6 +139,7 @@ public class MapperPlugin extends BatClientPlugin
             this.engine.moveToArea(null);
             this.searchEngine.setMapperArea(null);
             this.lastPrintedPathBehindStatus = null;
+            this.lastMapperRoomId = null;
             return;
         }
 
@@ -144,10 +148,16 @@ public class MapperPlugin extends BatClientPlugin
             return;
         }
 
+        boolean movedToDifferentRoom = this.lastMapperRoomId == null
+                || !this.lastMapperRoomId.equals(mapperPacket.roomUID);
+
         this.engine.moveToRoom(mapperPacket.areaName, mapperPacket.roomUID, mapperPacket.exitUsed,
                 mapperPacket.indoors, mapperPacket.shortDesc, mapperPacket.longDesc, mapperPacket.exits);
         this.searchEngine.setMapperArea(mapperPacket.areaName);
+        this.lastMapperRoomId = mapperPacket.roomUID;
+
         printPathBehindToScreenIfNeeded();
+        printFleePreviewToScreenIfNeeded(movedToDifferentRoom);
     }
 
     private void printPathBehindToScreenIfNeeded() {
@@ -166,6 +176,18 @@ public class MapperPlugin extends BatClientPlugin
 
         printConsoleMessage(pathBehindStatus);
         this.lastPrintedPathBehindStatus = pathBehindStatus;
+    }
+
+    private void printFleePreviewToScreenIfNeeded(boolean movedToDifferentRoom) {
+        if (!movedToDifferentRoom) {
+            return;
+        }
+
+        if (this.engine == null || !this.engine.isWainoModeEnabled()) {
+            return;
+        }
+
+        printConsoleMessage(this.engine.getBestFleePathStatus());
     }
 
     private MapperPacket parseMapperPacket(String[] values) {
@@ -272,6 +294,8 @@ public class MapperPlugin extends BatClientPlugin
                             printConsoleMessage("\t" + mapping);
                         }
                     }
+                } else if (command.equalsIgnoreCase(COMMAND_FLEE)) {
+                    printConsoleMessage(this.engine.getBestFleePathStatus());
                 } else if (command.equalsIgnoreCase(COMMAND_WAINO)) {
                     boolean enabled = this.engine.toggleWainoMode();
                     this.lastPrintedPathBehindStatus = null;
@@ -286,7 +310,9 @@ public class MapperPlugin extends BatClientPlugin
             } else if (params.length == 2) {
                 String command = params[0];
                 String label = params[1];
-                if (command.equalsIgnoreCase(COMMAND_ADD_LABEL)) {
+                if (command.equalsIgnoreCase(COMMAND_FLEE) && label.equalsIgnoreCase(COMMAND_GO)) {
+                    printConsoleMessage(this.engine.executeBestFleePath());
+                } else if (command.equalsIgnoreCase(COMMAND_ADD_LABEL)) {
                     if (!this.engine.roomLabelExists(label)) {
                         this.engine.setLabelToCurrentRoom(label);
                         printConsoleMessage(String.format("added label [%s] to this room", label));
@@ -361,6 +387,9 @@ public class MapperPlugin extends BatClientPlugin
         printConsoleMessage(String.format("\t%s        - to append a line to roomnotes", COMMAND_APPEND_TO_NOTES));
         printConsoleMessage(String.format("\t%s <desc> - to find rooms by long desc", COMMAND_FIND_DESC));
         printConsoleMessage(String.format("\t%s        - show current room id and mapped exits", COMMAND_WHERE));
+        printConsoleMessage(String.format("\t%s        - calculate best flee path away from Waino", COMMAND_FLEE));
+        printConsoleMessage(String.format("\t%s %s     - run the calculated flee path immediately", COMMAND_FLEE,
+                COMMAND_GO));
         printConsoleMessage(String.format("\t%s        - toggle Waino mode (also available as $%s)", COMMAND_WAINO,
                 COMMAND_WAINO));
     }

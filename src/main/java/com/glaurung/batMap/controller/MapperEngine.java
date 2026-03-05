@@ -42,6 +42,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
 
     private static final int MINIMAP_GRID_SPACING = 120;
     private static final int PATH_BEHIND_MAX_ENTRIES = 400;
+    private static final int FLEE_ANALYSIS_MAX_STATE_VISITS = 250000;
 
     SparseMultigraph<Room, Exit> graph;
     VisualizationViewer<Room, Exit> vv;
@@ -874,6 +875,315 @@ public class MapperEngine implements ItemListener, ComponentListener {
                 formatPathBehindCoordinates());
     }
 
+    public String getBestFleePathStatus() {
+        FleePathAnalysisResult analysis = analyzeBestFleePath();
+
+        return buildBestFleePathStatus(analysis);
+    }
+
+    public String executeBestFleePath() {
+        FleePathAnalysisResult analysis = analyzeBestFleePath();
+        String status = buildBestFleePathStatus(analysis);
+
+        if (!hasUsableFleePath(analysis)) {
+            return status;
+        }
+
+        String command = buildFleeMudCommand(analysis.bestPathSteps);
+        if (command == null || command.trim().isEmpty()) {
+            return status;
+        }
+
+        sendToMud(command);
+        return status + " Executing flee path now.";
+    }
+
+    private String buildBestFleePathStatus(FleePathAnalysisResult analysis) {
+        if (analysis == null) {
+            return "Flee analysis unavailable.";
+        }
+
+        if (analysis.blockedReason != null) {
+            return analysis.blockedReason;
+        }
+
+        if (analysis.analysisLimitReached) {
+            return String.format("Flee analysis stopped after %d states: too many possibilities to evaluate exactly.",
+                    analysis.stateVisits);
+        }
+
+        if (analysis.bestPathSteps.isEmpty()) {
+            return "No flee route found that avoids the tracked path behind from Waino.";
+        }
+
+        StringBuilder exits = new StringBuilder();
+        for (int i = 0; i < analysis.bestPathSteps.size(); i++) {
+            if (i > 0) {
+                exits.append(", ");
+            }
+            exits.append(analysis.bestPathSteps.get(i).exitCommand);
+        }
+
+        StringBuilder coordinates = new StringBuilder("[");
+        coordinates.append(formatCoordinate(analysis.startCoordinate));
+        for (FleePathStep step : analysis.bestPathSteps) {
+            coordinates.append(" -> ")
+                    .append(formatCoordinate(step.coordinate));
+        }
+        coordinates.append("]");
+
+        int roomsFled = analysis.bestPathSteps.size();
+        return String.format("Best flee path (%d room%s; analyzed %d branches): exits=%s path=%s", roomsFled,
+                roomsFled == 1 ? "" : "s", analysis.terminalPathsAnalyzed, exits.toString(),
+                coordinates.toString());
+    }
+
+    private boolean hasUsableFleePath(FleePathAnalysisResult analysis) {
+        return analysis != null
+                && analysis.blockedReason == null
+                && !analysis.analysisLimitReached
+                && analysis.bestPathSteps != null
+                && !analysis.bestPathSteps.isEmpty();
+    }
+
+    private String buildFleeMudCommand(List<FleePathStep> pathSteps) {
+        if (pathSteps == null || pathSteps.isEmpty()) {
+            return "";
+        }
+
+        String delimiter = getCommandDelimiter();
+        StringBuilder command = new StringBuilder();
+        for (FleePathStep step : pathSteps) {
+            if (step == null || step.exitCommand == null || step.exitCommand.trim().isEmpty()) {
+                continue;
+            }
+            command.append(step.exitCommand).append(delimiter);
+        }
+
+        return command.toString();
+    }
+
+    private String getCommandDelimiter() {
+        if (this.corpsePanel == null) {
+            return ";";
+        }
+
+        String delimiter = this.corpsePanel.getDelim();
+        if (delimiter == null || delimiter.isEmpty()) {
+            return ";";
+        }
+
+        return delimiter;
+    }
+
+    private FleePathAnalysisResult analyzeBestFleePath() {
+        FleePathAnalysisResult result = new FleePathAnalysisResult();
+
+        if (this.currentRoom == null) {
+            result.blockedReason = "Flee analysis unavailable: no current room selected.";
+            return result;
+        }
+
+        Point startCoordinate = getRoomMiniMapCoordinate(this.currentRoom);
+        if (startCoordinate == null) {
+            result.blockedReason = "Flee analysis unavailable: current room has no minimap coordinate.";
+            return result;
+        }
+
+        if (this.pathBehindCoordinates.isEmpty()) {
+            result.blockedReason = "Flee analysis unavailable: path behind from Waino is empty.";
+            return result;
+        }
+
+        result.startCoordinate = startCoordinate;
+        result.wainoCoordinate = copyCoordinate(this.pathBehindCoordinates.getFirst());
+
+        Set<Point> forbiddenCoordinates = new HashSet<Point>();
+        for (Point coordinate : this.pathBehindCoordinates) {
+            if (coordinate != null) {
+                forbiddenCoordinates.add(copyCoordinate(coordinate));
+            }
+        }
+        forbiddenCoordinates.remove(startCoordinate);
+
+        Set<String> visitedRoomIds = new HashSet<String>();
+        visitedRoomIds.add(this.currentRoom.getId());
+
+        List<FleePathStep> currentPath = new ArrayList<FleePathStep>();
+        exploreFleePaths(this.currentRoom, forbiddenCoordinates, visitedRoomIds, currentPath, result);
+
+        if (result.bestPathSteps == null) {
+            result.bestPathSteps = new ArrayList<FleePathStep>();
+        }
+
+        return result;
+    }
+
+    private void exploreFleePaths(Room room, Set<Point> forbiddenCoordinates, Set<String> visitedRoomIds,
+            List<FleePathStep> currentPath, FleePathAnalysisResult result) {
+        if (result.analysisLimitReached) {
+            return;
+        }
+
+        result.stateVisits++;
+        if (result.stateVisits > FLEE_ANALYSIS_MAX_STATE_VISITS) {
+            result.analysisLimitReached = true;
+            return;
+        }
+
+        List<FleeMoveOption> options = getSortedFleeMoveOptions(room);
+        boolean extended = false;
+
+        for (FleeMoveOption option : options) {
+            Room destination = option.destination;
+            if (destination == null || destination.getId() == null) {
+                continue;
+            }
+            if (visitedRoomIds.contains(destination.getId())) {
+                continue;
+            }
+
+            Point destinationCoordinate = getRoomMiniMapCoordinate(destination);
+            if (destinationCoordinate == null) {
+                continue;
+            }
+            if (forbiddenCoordinates.contains(destinationCoordinate)) {
+                continue;
+            }
+
+            extended = true;
+            visitedRoomIds.add(destination.getId());
+            currentPath.add(new FleePathStep(option.exitCommand, destinationCoordinate));
+
+            exploreFleePaths(destination, forbiddenCoordinates, visitedRoomIds, currentPath, result);
+
+            currentPath.remove(currentPath.size() - 1);
+            visitedRoomIds.remove(destination.getId());
+
+            if (result.analysisLimitReached) {
+                return;
+            }
+        }
+
+        if (!extended) {
+            evaluateFleeCandidate(currentPath, result);
+        }
+    }
+
+    private void evaluateFleeCandidate(List<FleePathStep> currentPath, FleePathAnalysisResult result) {
+        result.terminalPathsAnalyzed++;
+
+        int candidateLength = currentPath.size();
+        Point endpoint = result.startCoordinate;
+        if (!currentPath.isEmpty()) {
+            endpoint = currentPath.get(currentPath.size() - 1).coordinate;
+        }
+        int candidateDistance = calculateCoordinateDistance(result.wainoCoordinate, endpoint);
+        String candidateSignature = buildPathSignature(currentPath);
+
+        if (result.bestPathSteps == null) {
+            result.bestPathSteps = copyPath(currentPath);
+            result.bestPathLength = candidateLength;
+            result.bestEndpointDistance = candidateDistance;
+            result.bestPathSignature = candidateSignature;
+            return;
+        }
+
+        if (candidateLength > result.bestPathLength
+                || (candidateLength == result.bestPathLength && candidateDistance > result.bestEndpointDistance)
+                || (candidateLength == result.bestPathLength && candidateDistance == result.bestEndpointDistance
+                        && candidateSignature.compareTo(result.bestPathSignature) < 0)) {
+            result.bestPathSteps = copyPath(currentPath);
+            result.bestPathLength = candidateLength;
+            result.bestEndpointDistance = candidateDistance;
+            result.bestPathSignature = candidateSignature;
+        }
+    }
+
+    private List<FleeMoveOption> getSortedFleeMoveOptions(Room room) {
+        List<FleeMoveOption> options = new ArrayList<FleeMoveOption>();
+        if (room == null) {
+            return options;
+        }
+
+        Collection<Exit> outEdges = this.graph.getOutEdges(room);
+        if (outEdges == null) {
+            return options;
+        }
+
+        for (Exit exit : outEdges) {
+            if (exit == null || exit.getExit() == null || exit.getExit().trim().isEmpty()) {
+                continue;
+            }
+
+            Room destination = getDestinationRoomForExit(room, exit);
+            if (destination == null) {
+                continue;
+            }
+
+            options.add(new FleeMoveOption(exit.getExit(), destination));
+        }
+
+        Collections.sort(options, new Comparator<FleeMoveOption>() {
+            @Override
+            public int compare(FleeMoveOption first, FleeMoveOption second) {
+                int byExit = first.exitCommand.compareToIgnoreCase(second.exitCommand);
+                if (byExit != 0) {
+                    return byExit;
+                }
+
+                String firstRoomId = first.destination.getId() == null ? "" : first.destination.getId();
+                String secondRoomId = second.destination.getId() == null ? "" : second.destination.getId();
+                return firstRoomId.compareToIgnoreCase(secondRoomId);
+            }
+        });
+
+        return options;
+    }
+
+    private List<FleePathStep> copyPath(List<FleePathStep> sourcePath) {
+        List<FleePathStep> copy = new ArrayList<FleePathStep>();
+        if (sourcePath == null) {
+            return copy;
+        }
+
+        for (FleePathStep step : sourcePath) {
+            copy.add(new FleePathStep(step.exitCommand, step.coordinate));
+        }
+
+        return copy;
+    }
+
+    private String buildPathSignature(List<FleePathStep> path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder signature = new StringBuilder();
+        for (int i = 0; i < path.size(); i++) {
+            if (i > 0) {
+                signature.append('|');
+            }
+            signature.append(path.get(i).exitCommand);
+        }
+        return signature.toString();
+    }
+
+    private int calculateCoordinateDistance(Point from, Point to) {
+        if (from == null || to == null) {
+            return Integer.MIN_VALUE;
+        }
+
+        return Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
+    }
+
+    private Point copyCoordinate(Point point) {
+        if (point == null) {
+            return null;
+        }
+        return new Point(point.x, point.y);
+    }
+
     private Point getRoomMiniMapCoordinate(Room room) {
         if (room == null || !room.hasMiniMapCoordinate()) {
             return null;
@@ -1054,6 +1364,39 @@ public class MapperEngine implements ItemListener, ComponentListener {
             return endpoints.getFirst();
         }
         return null;
+    }
+
+    private static class FleeMoveOption {
+        private final String exitCommand;
+        private final Room destination;
+
+        private FleeMoveOption(String exitCommand, Room destination) {
+            this.exitCommand = exitCommand;
+            this.destination = destination;
+        }
+    }
+
+    private static class FleePathStep {
+        private final String exitCommand;
+        private final Point coordinate;
+
+        private FleePathStep(String exitCommand, Point coordinate) {
+            this.exitCommand = exitCommand;
+            this.coordinate = coordinate == null ? null : new Point(coordinate.x, coordinate.y);
+        }
+    }
+
+    private static class FleePathAnalysisResult {
+        private String blockedReason;
+        private boolean analysisLimitReached;
+        private long stateVisits;
+        private long terminalPathsAnalyzed;
+        private Point startCoordinate;
+        private Point wainoCoordinate;
+        private List<FleePathStep> bestPathSteps;
+        private int bestPathLength = Integer.MIN_VALUE;
+        private int bestEndpointDistance = Integer.MIN_VALUE;
+        private String bestPathSignature = "";
     }
 
     private boolean isCardinalDirection(String direction) {
