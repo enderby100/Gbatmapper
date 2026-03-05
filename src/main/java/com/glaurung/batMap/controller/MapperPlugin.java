@@ -157,7 +157,9 @@ public class MapperPlugin extends BatClientPlugin
         this.lastMapperRoomId = mapperPacket.roomUID;
 
         printPathBehindToScreenIfNeeded();
-        printFleePreviewToScreenIfNeeded(movedToDifferentRoom);
+        boolean shouldPrintFleePreview = movedToDifferentRoom
+                || this.engine.consumeWainoCoordinateChangedSinceLastPacket();
+        printFleePreviewToScreenIfNeeded(shouldPrintFleePreview);
     }
 
     private void printPathBehindToScreenIfNeeded() {

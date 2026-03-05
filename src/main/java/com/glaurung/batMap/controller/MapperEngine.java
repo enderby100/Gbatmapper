@@ -66,6 +66,8 @@ public class MapperEngine implements ItemListener, ComponentListener {
     boolean miniMapSessionInitialized = false;
     String miniMapParseStatus = "Minimap parser not run yet.";
     LinkedList<Point> pathBehindCoordinates = new LinkedList<Point>();
+    Point lastSeenWainoCoordinate = null;
+    boolean wainoCoordinateChangedSinceLastPacket = false;
 
     public MapperEngine(SparseMultigraph<Room, Exit> graph, MapperPlugin plugin) {
         this(plugin);
@@ -676,11 +678,19 @@ public class MapperEngine implements ItemListener, ComponentListener {
         return this.wainoModeEnabled;
     }
 
+    public boolean consumeWainoCoordinateChangedSinceLastPacket() {
+        boolean changed = this.wainoCoordinateChangedSinceLastPacket;
+        this.wainoCoordinateChangedSinceLastPacket = false;
+        return changed;
+    }
+
     private void resetMiniMapTrackingState() {
         this.miniMapOrigin = null;
         this.miniMapSessionInitialized = false;
         this.miniMapParseStatus = "Minimap parser not run yet.";
         this.pathBehindCoordinates.clear();
+        this.lastSeenWainoCoordinate = null;
+        this.wainoCoordinateChangedSinceLastPacket = false;
     }
 
     private void clearCardinalMappingsForCurrentArea() {
@@ -842,9 +852,26 @@ public class MapperEngine implements ItemListener, ComponentListener {
             return;
         }
 
+        Point wainoCoordinate = null;
         if (miniMapData != null && miniMapData.hasWainoCoordinate()) {
-            Point wainoCoordinate = new Point(miniMapData.getWainoX(), miniMapData.getWainoY());
+            wainoCoordinate = new Point(miniMapData.getWainoX(), miniMapData.getWainoY());
+            if (this.lastSeenWainoCoordinate == null || !this.lastSeenWainoCoordinate.equals(wainoCoordinate)) {
+                this.wainoCoordinateChangedSinceLastPacket = true;
+            }
+            this.lastSeenWainoCoordinate = new Point(wainoCoordinate.x, wainoCoordinate.y);
+
             if (currentCoordinate.equals(wainoCoordinate)) {
+                this.pathBehindCoordinates.clear();
+                this.pathBehindCoordinates.addLast(currentCoordinate);
+                return;
+            }
+        } else {
+            this.lastSeenWainoCoordinate = null;
+        }
+
+        if (this.wainoCoordinateChangedSinceLastPacket && !this.pathBehindCoordinates.isEmpty()) {
+            Point lastCoordinate = this.pathBehindCoordinates.getLast();
+            if (currentCoordinate.equals(lastCoordinate)) {
                 this.pathBehindCoordinates.clear();
                 this.pathBehindCoordinates.addLast(currentCoordinate);
                 return;
@@ -924,18 +951,9 @@ public class MapperEngine implements ItemListener, ComponentListener {
             exits.append(analysis.bestPathSteps.get(i).exitCommand);
         }
 
-        StringBuilder coordinates = new StringBuilder("[");
-        coordinates.append(formatCoordinate(analysis.startCoordinate));
-        for (FleePathStep step : analysis.bestPathSteps) {
-            coordinates.append(" -> ")
-                    .append(formatCoordinate(step.coordinate));
-        }
-        coordinates.append("]");
-
         int roomsFled = analysis.bestPathSteps.size();
-        return String.format("Best flee path (%d room%s; analyzed %d branches): exits=%s path=%s", roomsFled,
-                roomsFled == 1 ? "" : "s", analysis.terminalPathsAnalyzed, exits.toString(),
-                coordinates.toString());
+        return String.format("Best flee path (%d room%s; analyzed %d branches): exits=%s", roomsFled,
+                roomsFled == 1 ? "" : "s", analysis.terminalPathsAnalyzed, exits.toString());
     }
 
     private boolean hasUsableFleePath(FleePathAnalysisResult analysis) {
