@@ -27,9 +27,13 @@ public class MapperPlugin extends BatClientPlugin
     protected static final String COMMAND_ADD_LABEL = "add";
     protected static final String COMMAND_REMOVE_LABEL = "del";
     protected static final String COMMAND_RUN_TO_LABEL = "run";
+    protected static final String COMMAND_HELP = "help";
     protected static final String COMMAND_LIST_LABELS = "list";
     protected static final String COMMAND_APPEND_TO_NOTES = "append";
     protected static final String COMMAND_FIND_DESC = "find";
+    protected static final String COMMAND_WHERE = "where";
+    protected static final String COMMAND_WAINO = "wainomode";
+    protected static final String ALIAS_WAINO = "/alias " + COMMAND_WAINO + "=$mappercommand " + COMMAND_WAINO;
 
     private MapperEngine engine;
     private SearchEngine searchEngine;
@@ -50,6 +54,7 @@ public class MapperPlugin extends BatClientPlugin
 
     private final String EXIT_AREA_MESSAGE = "REALM_MAP";
     private String BASEDIR = null;
+    private String lastPrintedPathBehindStatus = null;
 
     public void loadPlugin() {
         BASEDIR = this.getBaseDirectory();
@@ -81,6 +86,13 @@ public class MapperPlugin extends BatClientPlugin
         engine.setBaseDir(BASEDIR);
         searchEngine.setBaseDir(BASEDIR);
         clientWin.addComponentListener(engine);
+        this.getClientGUI().doCommand(ALIAS_WAINO);
+        try {
+            printConsoleMessage("batMap loaded (v" + getLoadedVersion() + ").");
+            printConsoleMessage("Command usage: $mappercommand <cmd>.");
+            printConsoleMessage("Use $wainomode to toggle Waino mode.");
+        } catch (Throwable ignored) {
+        }
 
     }
 
@@ -116,27 +128,88 @@ public class MapperPlugin extends BatClientPlugin
         // cMapper;areaname;roomUID;exitUsed;indoor boolean;shortDesc;longDesc;exits
         String input = event.getActionCommand();
         String[] values = input.split(";;", -1);
-        if (values[PREFIX].equals(CHANNEL_PREFIX) && values.length == MESSAGE_LENGTH) {
-            // System.out.println("\n\n\nvalid input: " +input);
-            String areaName = values[AREA_NAME];
-            String roomUID = values[ROOM_ID];
-            String exitUsed = values[EXIT_USED];
-            boolean indoors = convertToBoolean(values[IS_INDOORS]);
-            String shortDesc = values[SHORT_DESC];
-            String longDesc = values[LONG_DESC].replaceAll("\n", " ");
-            HashSet<String> exits = new HashSet<String>(Arrays.asList(values[EXITS].split(",")));
-            this.engine.moveToRoom(areaName, roomUID, exitUsed, indoors, shortDesc, longDesc, exits);
-            this.searchEngine.setMapperArea(areaName);
-        } else if (values[PREFIX].equals(CHANNEL_PREFIX) && values.length != EXIT_AREA_LENGTH) {
-            // System.out.println("\n\n\nBROKEN HIDEOUS INPUT: "+input);
-        } else if (values[PREFIX].equals(CHANNEL_PREFIX) && values.length == EXIT_AREA_LENGTH) {
-            // System.out.println("\n\n\nexiting area: "+input);
-            if (values[AREA_NAME].equals(EXIT_AREA_MESSAGE)) {
-                this.engine.moveToArea(null);
-                this.searchEngine.setMapperArea(null);
-            }
+        if (values.length == 0 || !CHANNEL_PREFIX.equals(values[PREFIX])) {
+            return;
         }
 
+        if (values.length == EXIT_AREA_LENGTH && values[AREA_NAME].equals(EXIT_AREA_MESSAGE)) {
+            this.engine.moveToArea(null);
+            this.searchEngine.setMapperArea(null);
+            this.lastPrintedPathBehindStatus = null;
+            return;
+        }
+
+        MapperPacket mapperPacket = parseMapperPacket(values);
+        if (mapperPacket == null) {
+            return;
+        }
+
+        this.engine.moveToRoom(mapperPacket.areaName, mapperPacket.roomUID, mapperPacket.exitUsed,
+                mapperPacket.indoors, mapperPacket.shortDesc, mapperPacket.longDesc, mapperPacket.exits);
+        this.searchEngine.setMapperArea(mapperPacket.areaName);
+        printPathBehindToScreenIfNeeded();
+    }
+
+    private void printPathBehindToScreenIfNeeded() {
+        if (this.engine == null || !this.engine.isWainoModeEnabled()) {
+            return;
+        }
+
+        String pathBehindStatus = this.engine.getPathBehindStatus();
+        if (pathBehindStatus == null || pathBehindStatus.trim().isEmpty()) {
+            return;
+        }
+
+        if (pathBehindStatus.equals(this.lastPrintedPathBehindStatus)) {
+            return;
+        }
+
+        printConsoleMessage(pathBehindStatus);
+        this.lastPrintedPathBehindStatus = pathBehindStatus;
+    }
+
+    private MapperPacket parseMapperPacket(String[] values) {
+        if (values == null || values.length < 8) {
+            return null;
+        }
+
+        int exitsIndex = values.length - 1;
+        if (exitsIndex > EXITS && values[exitsIndex].isEmpty()) {
+            exitsIndex--;
+        }
+
+        if (exitsIndex < EXITS) {
+            return null;
+        }
+
+        String areaName = values[AREA_NAME];
+        String roomUID = values[ROOM_ID];
+        String exitUsed = values[EXIT_USED];
+        boolean indoors;
+        try {
+            indoors = convertToBoolean(values[IS_INDOORS]);
+        } catch (Exception e) {
+            return null;
+        }
+
+        String shortDesc = values[SHORT_DESC];
+        StringBuilder longDescBuilder = new StringBuilder();
+        for (int i = LONG_DESC; i < exitsIndex; i++) {
+            if (i > LONG_DESC) {
+                longDescBuilder.append(";;");
+            }
+            longDescBuilder.append(values[i]);
+        }
+        String longDesc = longDescBuilder.toString();
+
+        HashSet<String> exits = new HashSet<String>();
+        String exitsValue = values[exitsIndex];
+        if (exitsValue != null && !exitsValue.trim().isEmpty()) {
+            exits.addAll(Arrays.asList(exitsValue.split(",")));
+            exits.remove("");
+        }
+
+        return new MapperPacket(areaName, roomUID, exitUsed, indoors, shortDesc, longDesc, exits);
     }
 
     private boolean convertToBoolean(String oneOrZero) {
@@ -172,28 +245,43 @@ public class MapperPlugin extends BatClientPlugin
     @Override
     public void process(Object input) {
         if (input == null) {
-            printConsoleMessage("Mapper has following commands:");
-            printConsoleMessage("\t%s <label> - to add label to current room".formatted(COMMAND_ADD_LABEL));
-            printConsoleMessage("\t%s <label> - to run to room with that label ( need to set delim in corpsepanel)"
-                    .formatted(COMMAND_RUN_TO_LABEL));
-            printConsoleMessage("\t%s         - to remove label from current room".formatted(COMMAND_REMOVE_LABEL));
-            printConsoleMessage("\t%s        - to list labels and rooms".formatted(COMMAND_LIST_LABELS));
-            printConsoleMessage("\t%s        - to append a line to roomnotes".formatted(COMMAND_APPEND_TO_NOTES));
-            printConsoleMessage("\t%s <desc> - to find rooms by long desc".formatted(COMMAND_FIND_DESC));
+            printCommandHelp();
         }
         if (input instanceof String) {
             String string = (String) input;
             String[] params = string.split(" ");
             if (params.length == 1) {
                 String command = params[0];
-                if (command.equalsIgnoreCase(COMMAND_REMOVE_LABEL)) {
+                if (command.equalsIgnoreCase(COMMAND_HELP)) {
+                    printCommandHelp();
+                } else if (command.equalsIgnoreCase(COMMAND_REMOVE_LABEL)) {
                     this.engine.removeLabelFromCurrent();
                 } else if (command.equalsIgnoreCase(COMMAND_LIST_LABELS)) {
                     for (String entry : this.engine.getLabels()) {
                         printConsoleMessage(entry);
                     }
+                } else if (command.equalsIgnoreCase(COMMAND_WHERE)) {
+                    printConsoleMessage(this.engine.getCurrentRoomTrackingSummary());
+                    printConsoleMessage(this.engine.getPathBehindStatus());
+                    List<String> exits = this.engine.getCurrentRoomExitTargets();
+                    if (exits.isEmpty()) {
+                        printConsoleMessage("No mapped exits from current room yet.");
+                    } else {
+                        printConsoleMessage("Mapped exits:");
+                        for (String mapping : exits) {
+                            printConsoleMessage("\t" + mapping);
+                        }
+                    }
+                } else if (command.equalsIgnoreCase(COMMAND_WAINO)) {
+                    boolean enabled = this.engine.toggleWainoMode();
+                    this.lastPrintedPathBehindStatus = null;
+                    printConsoleMessage(String.format("Waino mode %s. Maze remap output is now %s.",
+                            enabled ? "enabled" : "disabled", enabled ? "on" : "off"));
+                    if (enabled) {
+                        printPathBehindToScreenIfNeeded();
+                    }
                 } else {
-                    printConsoleError("unknown command: [%s]".formatted(command));
+                    printConsoleError(String.format("unknown command: [%s]", command));
                 }
             } else if (params.length == 2) {
                 String command = params[0];
@@ -201,22 +289,22 @@ public class MapperPlugin extends BatClientPlugin
                 if (command.equalsIgnoreCase(COMMAND_ADD_LABEL)) {
                     if (!this.engine.roomLabelExists(label)) {
                         this.engine.setLabelToCurrentRoom(label);
-                        printConsoleMessage("added label [%s] to this room".formatted(label));
+                        printConsoleMessage(String.format("added label [%s] to this room", label));
                     } else {
-                        printConsoleError("label [%s] already exists, must be unique per area".formatted(label));
+                        printConsoleError(String.format("label [%s] already exists, must be unique per area", label));
                     }
                 } else if (command.equalsIgnoreCase(COMMAND_RUN_TO_LABEL)) {
-                    printConsoleMessage("running to room [%s]".formatted(label));
+                    printConsoleMessage(String.format("running to room [%s]", label));
                     if (this.engine.roomLabelExists(label)) {
                         this.engine.runtoLabel(label);
                     } else {
-                        printConsoleError("label [%s] not found".formatted(label));
+                        printConsoleError(String.format("label [%s] not found", label));
                     }
                 } else if (command.equalsIgnoreCase(COMMAND_APPEND_TO_NOTES)) {
-                    printConsoleMessage("Appending to notes [%s]".formatted(label));
+                    printConsoleMessage(String.format("Appending to notes [%s]", label));
                     this.engine.getPanel().appentToNotes(label);
                 } else {
-                    printConsoleError("unknown command: [%s]".formatted(command));
+                    printConsoleError(String.format("unknown command: [%s]", command));
                 }
 
             } else if (params.length > 2) {
@@ -232,7 +320,7 @@ public class MapperPlugin extends BatClientPlugin
                         printConsoleMessage(room);
                     }
                 } else {
-                    printConsoleError("unknown command: [%s] or too many params, slow down!".formatted(command));
+                    printConsoleError(String.format("unknown command: [%s] or too many params, slow down!", command));
                 }
 
             } else {
@@ -247,5 +335,54 @@ public class MapperPlugin extends BatClientPlugin
 
     private void printConsoleMessage(String msg) {
         this.getClientGUI().printText("general", "[Mapper] " + msg + "\n", "6AFA63");
+    }
+
+    public void printMapperMessage(String msg) {
+        printConsoleMessage(msg);
+    }
+
+    private String getLoadedVersion() {
+        Package pluginPackage = this.getClass().getPackage();
+        if (pluginPackage == null || pluginPackage.getImplementationVersion() == null) {
+            return "dev";
+        }
+        return pluginPackage.getImplementationVersion();
+    }
+
+    private void printCommandHelp() {
+        printConsoleMessage("Mapper has following commands:");
+        printConsoleMessage(String.format("\t%s        - show this help", COMMAND_HELP));
+        printConsoleMessage(String.format("\t%s <label> - to add label to current room", COMMAND_ADD_LABEL));
+        printConsoleMessage(
+                String.format("\t%s <label> - to run to room with that label ( need to set delim in corpsepanel)",
+                        COMMAND_RUN_TO_LABEL));
+        printConsoleMessage(String.format("\t%s         - to remove label from current room", COMMAND_REMOVE_LABEL));
+        printConsoleMessage(String.format("\t%s        - to list labels and rooms", COMMAND_LIST_LABELS));
+        printConsoleMessage(String.format("\t%s        - to append a line to roomnotes", COMMAND_APPEND_TO_NOTES));
+        printConsoleMessage(String.format("\t%s <desc> - to find rooms by long desc", COMMAND_FIND_DESC));
+        printConsoleMessage(String.format("\t%s        - show current room id and mapped exits", COMMAND_WHERE));
+        printConsoleMessage(String.format("\t%s        - toggle Waino mode (also available as $%s)", COMMAND_WAINO,
+                COMMAND_WAINO));
+    }
+
+    private static class MapperPacket {
+        private final String areaName;
+        private final String roomUID;
+        private final String exitUsed;
+        private final boolean indoors;
+        private final String shortDesc;
+        private final String longDesc;
+        private final HashSet<String> exits;
+
+        private MapperPacket(String areaName, String roomUID, String exitUsed, boolean indoors, String shortDesc,
+                String longDesc, HashSet<String> exits) {
+            this.areaName = areaName;
+            this.roomUID = roomUID;
+            this.exitUsed = exitUsed;
+            this.indoors = indoors;
+            this.shortDesc = shortDesc;
+            this.longDesc = longDesc;
+            this.exits = exits;
+        }
     }
 }

@@ -40,6 +40,9 @@ import edu.uci.ics.jung.visualization.transform.MutableTransformer;
 
 public class MapperEngine implements ItemListener, ComponentListener {
 
+    private static final int MINIMAP_GRID_SPACING = 120;
+    private static final int PATH_BEHIND_MAX_ENTRIES = 400;
+
     SparseMultigraph<Room, Exit> graph;
     VisualizationViewer<Room, Exit> vv;
     MapperLayout mapperLayout;
@@ -57,6 +60,11 @@ public class MapperEngine implements ItemListener, ComponentListener {
     MapperPlugin plugin;
     boolean mazemode = false;
     boolean reversableDirsMode = false;
+    boolean wainoModeEnabled = false;
+    Point miniMapOrigin = null;
+    boolean miniMapSessionInitialized = false;
+    String miniMapParseStatus = "Minimap parser not run yet.";
+    LinkedList<Point> pathBehindCoordinates = new LinkedList<Point>();
 
     public MapperEngine(SparseMultigraph<Room, Exit> graph, MapperPlugin plugin) {
         this(plugin);
@@ -139,49 +147,62 @@ public class MapperEngine implements ItemListener, ComponentListener {
             newRoomAddedToGraph = true;
         }
 
+        RoomMiniMapParser.MiniMapData miniMapData = RoomMiniMapParser.parse(longDesc);
+        updateMiniMapParseStatus(longDesc, miniMapData);
+        if (miniMapData != null && miniMapData.hasPlayerCoordinate() && !miniMapSessionInitialized) {
+            miniMapSessionInitialized = true;
+        }
+        applyMiniMapDataToRoom(newRoom, miniMapData);
+        updatePathBehindTracker(newRoom, miniMapData);
+
         Exit exit = new Exit(exitUsed);
+        boolean sameRoomAsCurrent = currentRoom != null && currentRoom.equals(newRoom);
         if (currentRoom == null && !didTeleportIn(exitUsed)) {
             newRoom.setAreaEntrance(true);
         }
 
         if (currentRoom == null || didTeleportIn(exitUsed)) {
             graph.addVertex(newRoom);// if room existed in this graph, then this just does nothing?
+        } else if (sameRoomAsCurrent && !isCompassDirection(exit.getExit())) {
+            // same-room refresh packet (for example look/l): keep room state updated
+            // but do not add a synthetic self-edge with non-movement command text
         } else {
-            if (GraphUtils.canAddExit(graph.getOutEdges(currentRoom), exitUsed)) { // parallel exits can exist, but not
-                                                                                   // with same name
-                currentRoom.addExit(exit.getExit());
-                graph.addEdge(exit, new Pair<Room>(currentRoom, newRoom), EdgeType.DIRECTED);
+            addOrUpdateExitConnection(currentRoom, newRoom, exit.getExit());
 
-                if (reversableDirsMode && exit.getOpposite() != null) {
-                    Exit reverseExit = new Exit(exit.getOpposite());
-                    if (GraphUtils.canAddExit(graph.getOutEdges(newRoom), reverseExit.getExit())) {
-                        newRoom.addExit(reverseExit.getExit());
-                        graph.addEdge(reverseExit, new Pair<Room>(newRoom, currentRoom), EdgeType.DIRECTED);
-                    }
-                }
+            if (reversableDirsMode && exit.getOpposite() != null) {
+                addOrUpdateExitConnection(newRoom, currentRoom, exit.getOpposite());
             }
 
         }
+
+        Point2D miniMapLocation = getMiniMapLocationForRoom(newRoom);
 
         if (newRoomAddedToGraph) {
 
-            if (currentRoom != null) {
-                Point2D oldroomLocation = mapperLayout.transform(currentRoom);
-                Point2D relativeLocation = DrawingUtils.getRelativePosition(oldroomLocation, exit, this.snapMode);
-                // relativeLocation = getValidLocation(relativeLocation);
-                relativeLocation = mapperLayout.getValidLocation(relativeLocation);
-                vv.getGraphLayout().setLocation(newRoom, relativeLocation);
+            if (miniMapLocation != null) {
+                vv.getGraphLayout().setLocation(newRoom, miniMapLocation);
             } else {
-                // either first room in new area, or new room in old area, no connection
-                // anywhere, either way lets draw into middle
-                Point2D possibleLocation = new Point2D.Double(panel.getWidth() / 2, panel.getHeight() / 2);
-                // possibleLocation = getValidLocation(possibleLocation);
-                possibleLocation = mapperLayout.getValidLocation(possibleLocation);
-                vv.getGraphLayout().setLocation(newRoom, possibleLocation);
+
+                if (currentRoom != null) {
+                    Point2D oldroomLocation = mapperLayout.transform(currentRoom);
+                    Point2D relativeLocation = DrawingUtils.getRelativePosition(oldroomLocation, exit, this.snapMode);
+                    // relativeLocation = getValidLocation(relativeLocation);
+                    relativeLocation = mapperLayout.getValidLocation(relativeLocation);
+                    vv.getGraphLayout().setLocation(newRoom, relativeLocation);
+                } else {
+                    // either first room in new area, or new room in old area, no connection
+                    // anywhere, either way lets draw into middle
+                    Point2D possibleLocation = new Point2D.Double(panel.getWidth() / 2, panel.getHeight() / 2);
+                    // possibleLocation = getValidLocation(possibleLocation);
+                    possibleLocation = mapperLayout.getValidLocation(possibleLocation);
+                    vv.getGraphLayout().setLocation(newRoom, possibleLocation);
+                }
             }
 
+        } else if (miniMapLocation != null) {
+            vv.getGraphLayout().setLocation(newRoom, miniMapLocation);
         }
-        if (currentRoom != null && mazemode) {
+        if (currentRoom != null && mazemode && isCompassDirection(exitUsed)) {
             currentRoom.useExit(exitUsed);
         }
 
@@ -197,6 +218,13 @@ public class MapperEngine implements ItemListener, ComponentListener {
 
     private boolean didTeleportIn(String exitUsed) {
         return exitUsed.equalsIgnoreCase(new Exit("").TELEPORT);
+    }
+
+    private boolean isCompassDirection(String exitUsed) {
+        if (exitUsed == null || exitUsed.trim().isEmpty()) {
+            return false;
+        }
+        return Exit.checkWhatExitIs(exitUsed) != null;
     }
 
     /**
@@ -242,6 +270,8 @@ public class MapperEngine implements ItemListener, ComponentListener {
      *                 or such.
      */
     protected void moveToArea(String areaName) {
+
+        resetMiniMapTrackingState();
 
         if (areaName == null) {
             clearExtraCurrentAndChosenValuesFromRooms();
@@ -326,6 +356,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
         mapperLayout.displayLoadedData(areaSaveObject);
         this.area = new Area(areaName);
         this.currentRoom = null;
+        resetMiniMapTrackingState();
         repaint();
     }
 
@@ -613,7 +644,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
         List<String> labels = new LinkedList<>();
         for (Room room : this.graph.getVertices()) {
             if (room.getLabel() != null) {
-                labels.add("%-10s %s".formatted(room.getLabel(), room.getShortDesc()));
+                labels.add(String.format("%-10s %s", room.getLabel(), room.getShortDesc()));
             }
         }
         return labels;
@@ -633,6 +664,403 @@ public class MapperEngine implements ItemListener, ComponentListener {
 
     public void setReversableDirsMode(boolean enabled) {
         this.reversableDirsMode = enabled;
+    }
+
+    public boolean toggleWainoMode() {
+        this.wainoModeEnabled = !this.wainoModeEnabled;
+        return this.wainoModeEnabled;
+    }
+
+    public boolean isWainoModeEnabled() {
+        return this.wainoModeEnabled;
+    }
+
+    private void resetMiniMapTrackingState() {
+        this.miniMapOrigin = null;
+        this.miniMapSessionInitialized = false;
+        this.miniMapParseStatus = "Minimap parser not run yet.";
+        this.pathBehindCoordinates.clear();
+    }
+
+    private void clearCardinalMappingsForCurrentArea() {
+        List<Exit> cardinalEdgesToRemove = new ArrayList<Exit>();
+
+        for (Room room : this.graph.getVertices()) {
+            room.clearCardinalExitTargets();
+
+            Collection<Exit> outEdges = this.graph.getOutEdges(room);
+            if (outEdges == null) {
+                continue;
+            }
+
+            for (Exit exit : outEdges) {
+                String normalizedDirection = Exit.checkWhatExitIs(exit.getExit());
+                if (isCardinalDirection(normalizedDirection)) {
+                    cardinalEdgesToRemove.add(exit);
+                }
+            }
+        }
+
+        for (Exit edge : cardinalEdgesToRemove) {
+            this.graph.removeEdge(edge);
+        }
+    }
+
+    private void addOrUpdateExitConnection(Room sourceRoom, Room destinationRoom, String exitUsed) {
+        if (sourceRoom == null || destinationRoom == null || exitUsed == null || exitUsed.trim().isEmpty()) {
+            return;
+        }
+
+        String normalizedDirection = Exit.checkWhatExitIs(exitUsed);
+        if (isCardinalDirection(normalizedDirection)) {
+            upsertCardinalExitConnection(sourceRoom, destinationRoom, normalizedDirection);
+            return;
+        }
+
+        if (GraphUtils.canAddExit(graph.getOutEdges(sourceRoom), exitUsed)) {
+            sourceRoom.addExit(exitUsed);
+            graph.addEdge(new Exit(exitUsed), new Pair<Room>(sourceRoom, destinationRoom), EdgeType.DIRECTED);
+        }
+    }
+
+    private void upsertCardinalExitConnection(Room sourceRoom, Room destinationRoom, String cardinalDirection) {
+        String previousTargetRoomId = sourceRoom.getCardinalExitTarget(cardinalDirection);
+        boolean mappingCreated = previousTargetRoomId == null;
+        boolean mappingChanged = previousTargetRoomId != null && !previousTargetRoomId.equals(destinationRoom.getId());
+
+        sourceRoom.setCardinalExitTarget(cardinalDirection, destinationRoom.getId());
+        sourceRoom.addExit(cardinalDirection);
+
+        Collection<Exit> outEdges = this.graph.getOutEdges(sourceRoom);
+        List<Exit> matchingCardinalEdges = new ArrayList<Exit>();
+        if (outEdges != null) {
+            for (Exit existingExit : outEdges) {
+                String existingDirection = Exit.checkWhatExitIs(existingExit.getExit());
+                if (cardinalDirection.equals(existingDirection)) {
+                    matchingCardinalEdges.add(existingExit);
+                }
+            }
+        }
+
+        boolean alreadyMappedToDestination = false;
+        for (Exit existingCardinalEdge : matchingCardinalEdges) {
+            Room existingDestination = getDestinationRoomForExit(sourceRoom, existingCardinalEdge);
+            if (existingDestination != null && existingDestination.equals(destinationRoom)) {
+                if (alreadyMappedToDestination) {
+                    this.graph.removeEdge(existingCardinalEdge);
+                } else {
+                    alreadyMappedToDestination = true;
+                }
+            } else {
+                this.graph.removeEdge(existingCardinalEdge);
+            }
+        }
+
+        if (!alreadyMappedToDestination) {
+            this.graph.addEdge(new Exit(cardinalDirection), new Pair<Room>(sourceRoom, destinationRoom),
+                    EdgeType.DIRECTED);
+        }
+
+        if (mappingCreated) {
+            printExitMappingCreatedMessage(sourceRoom.getId(), cardinalDirection, destinationRoom.getId());
+        }
+
+        if (mappingChanged) {
+            printExitRemapMessage(sourceRoom.getId(), cardinalDirection, previousTargetRoomId, destinationRoom.getId());
+        }
+    }
+
+    private void printExitMappingCreatedMessage(String sourceRoomId, String direction, String targetRoomId) {
+        if (this.plugin == null) {
+            return;
+        }
+
+        this.plugin.printMapperMessage(
+                String.format("Mapped new exit: %s %s -> %s.", sourceRoomId, direction, targetRoomId));
+    }
+
+    private void printExitRemapMessage(String sourceRoomId, String direction, String previousTargetRoomId,
+            String newTargetRoomId) {
+        if (this.plugin == null || !this.wainoModeEnabled) {
+            return;
+        }
+
+        this.plugin.printMapperMessage(String.format("Updated exit mapping: %s %s now points to %s (was %s).",
+                sourceRoomId, direction, newTargetRoomId, previousTargetRoomId));
+    }
+
+    private void applyMiniMapDataToRoom(Room room, RoomMiniMapParser.MiniMapData miniMapData) {
+        if (room == null || miniMapData == null) {
+            return;
+        }
+
+        if (miniMapData.hasPlayerCoordinate()) {
+            room.setMiniMapCoordinate(miniMapData.getPlayerX(), miniMapData.getPlayerY());
+        }
+    }
+
+    private void updateMiniMapParseStatus(String longDesc, RoomMiniMapParser.MiniMapData miniMapData) {
+        if (longDesc == null || longDesc.trim().isEmpty()) {
+            this.miniMapParseStatus = "No minimap data in longDesc (empty).";
+            return;
+        }
+
+        if (miniMapData == null) {
+            this.miniMapParseStatus = "No 7x7 minimap block detected in longDesc.";
+            return;
+        }
+
+        if (!miniMapData.hasPlayerCoordinate()) {
+            this.miniMapParseStatus = "Minimap found but player marker (* or @) missing.";
+            return;
+        }
+
+        StringBuilder status = new StringBuilder();
+        status.append("Minimap parsed player@[")
+                .append(miniMapData.getPlayerX())
+                .append(",")
+                .append(miniMapData.getPlayerY())
+                .append("]");
+
+        if (miniMapData.hasWainoCoordinate()) {
+            status.append(" W@[")
+                    .append(miniMapData.getWainoX())
+                    .append(",")
+                    .append(miniMapData.getWainoY())
+                    .append("]");
+        } else {
+            status.append(" W@[unknown]");
+        }
+
+        this.miniMapParseStatus = status.toString();
+    }
+
+    private void updatePathBehindTracker(Room room, RoomMiniMapParser.MiniMapData miniMapData) {
+        Point currentCoordinate = getRoomMiniMapCoordinate(room);
+        if (currentCoordinate == null) {
+            return;
+        }
+
+        if (miniMapData != null && miniMapData.hasWainoCoordinate()) {
+            Point wainoCoordinate = new Point(miniMapData.getWainoX(), miniMapData.getWainoY());
+            if (currentCoordinate.equals(wainoCoordinate)) {
+                this.pathBehindCoordinates.clear();
+                this.pathBehindCoordinates.addLast(currentCoordinate);
+                return;
+            }
+        }
+
+        if (!this.pathBehindCoordinates.isEmpty()) {
+            Point lastCoordinate = this.pathBehindCoordinates.getLast();
+            if (currentCoordinate.equals(lastCoordinate)) {
+                return;
+            }
+        }
+
+        this.pathBehindCoordinates.addLast(currentCoordinate);
+
+        while (this.pathBehindCoordinates.size() > PATH_BEHIND_MAX_ENTRIES) {
+            this.pathBehindCoordinates.removeFirst();
+        }
+    }
+
+    public String getPathBehindStatus() {
+        if (this.pathBehindCoordinates.isEmpty()) {
+            return "Path behind: unavailable (no tracked coordinates yet).";
+        }
+
+        int roomsBehind = Math.max(0, this.pathBehindCoordinates.size() - 1);
+        return String.format("Path behind (%d room%s): %s", roomsBehind, roomsBehind == 1 ? "" : "s",
+                formatPathBehindCoordinates());
+    }
+
+    private Point getRoomMiniMapCoordinate(Room room) {
+        if (room == null || !room.hasMiniMapCoordinate()) {
+            return null;
+        }
+
+        return new Point(room.getMiniMapX(), room.getMiniMapY());
+    }
+
+    private String formatPathBehindCoordinates() {
+        if (this.pathBehindCoordinates.isEmpty()) {
+            return "[]";
+        }
+
+        StringBuilder path = new StringBuilder("[");
+        for (int i = 0; i < this.pathBehindCoordinates.size(); i++) {
+            if (i > 0) {
+                path.append(" -> ");
+            }
+            path.append(formatCoordinate(this.pathBehindCoordinates.get(i)));
+        }
+        path.append("]");
+        return path.toString();
+    }
+
+    private String formatCoordinate(Point coordinate) {
+        if (coordinate == null) {
+            return "[?,?]";
+        }
+        return String.format("[%d,%d]", coordinate.x, coordinate.y);
+    }
+
+    private Point2D getMiniMapLocationForRoom(Room room) {
+        if (room == null || !room.hasMiniMapCoordinate()) {
+            return null;
+        }
+
+        if (this.miniMapOrigin == null) {
+            this.miniMapOrigin = initializeMiniMapOrigin(room);
+        }
+
+        double x = this.miniMapOrigin.getX() + room.getMiniMapX() * MINIMAP_GRID_SPACING;
+        double y = this.miniMapOrigin.getY() + room.getMiniMapY() * MINIMAP_GRID_SPACING;
+        return new Point2D.Double(x, y);
+    }
+
+    private Point initializeMiniMapOrigin(Room room) {
+        Point2D centerPoint = this.panel.getMapperCentralPoint();
+
+        int centerX = (int) centerPoint.getX();
+        int centerY = (int) centerPoint.getY();
+
+        if (centerX <= 0) {
+            centerX = this.vv.getWidth() / 2;
+        }
+        if (centerY <= 0) {
+            centerY = this.vv.getHeight() / 2;
+        }
+        if (centerX <= 0) {
+            centerX = 250;
+        }
+        if (centerY <= 0) {
+            centerY = 250;
+        }
+
+        int originX = centerX - room.getMiniMapX() * MINIMAP_GRID_SPACING;
+        int originY = centerY - room.getMiniMapY() * MINIMAP_GRID_SPACING;
+        return new Point(originX, originY);
+    }
+
+    public String getCurrentRoomTrackingSummary() {
+        if (this.currentRoom == null) {
+            return "No current room selected yet.";
+        }
+
+        StringBuilder summary = new StringBuilder();
+        summary.append("roomUID=").append(this.currentRoom.getId());
+
+        if (this.currentRoom.hasMiniMapCoordinate()) {
+            summary.append(" @[")
+                    .append(this.currentRoom.getMiniMapX())
+                    .append(",")
+                    .append(this.currentRoom.getMiniMapY())
+                    .append("]");
+        } else {
+            summary.append(" @[?,?]");
+        }
+
+        summary.append(" parser=").append(this.miniMapParseStatus);
+        summary.append(" pathBehind=").append(formatPathBehindCoordinates());
+
+        return summary.toString();
+    }
+
+    public boolean isCurrentRoomMiniMapTracked() {
+        return this.currentRoom != null && this.currentRoom.hasMiniMapCoordinate();
+    }
+
+    public List<String> getCurrentRoomExitTargets() {
+        List<String> mappings = new LinkedList<String>();
+        if (this.currentRoom == null) {
+            return mappings;
+        }
+
+        addCardinalExitMappingIfKnown("n", mappings);
+        addCardinalExitMappingIfKnown("e", mappings);
+        addCardinalExitMappingIfKnown("s", mappings);
+        addCardinalExitMappingIfKnown("w", mappings);
+
+        Collection<Exit> outEdges = this.graph.getOutEdges(this.currentRoom);
+        if (outEdges != null) {
+            for (Exit exit : outEdges) {
+                String normalizedDirection = Exit.checkWhatExitIs(exit.getExit());
+                if (isCardinalDirection(normalizedDirection)) {
+                    continue;
+                }
+
+                Room destination = getDestinationRoomForExit(this.currentRoom, exit);
+                if (destination == null) {
+                    continue;
+                }
+
+                StringBuilder mapping = new StringBuilder();
+                mapping.append(exit.getExit())
+                        .append(" -> ")
+                        .append(destination.getId());
+                if (destination.hasMiniMapCoordinate()) {
+                    mapping.append(" [")
+                            .append(destination.getMiniMapX())
+                            .append(",")
+                            .append(destination.getMiniMapY())
+                            .append("]");
+                } else {
+                    mapping.append(" [?,?]");
+                }
+                mappings.add(mapping.toString());
+            }
+        }
+
+        Collections.sort(mappings);
+        return mappings;
+    }
+
+    private void addCardinalExitMappingIfKnown(String cardinalDirection, List<String> mappings) {
+        String targetRoomId = this.currentRoom.getCardinalExitTarget(cardinalDirection);
+        if (targetRoomId == null) {
+            return;
+        }
+
+        Room destination = getRoomFromGraph(targetRoomId);
+        StringBuilder mapping = new StringBuilder();
+        mapping.append(cardinalDirection)
+                .append(" -> ")
+                .append(targetRoomId);
+
+        if (destination != null && destination.hasMiniMapCoordinate()) {
+            mapping.append(" [")
+                    .append(destination.getMiniMapX())
+                    .append(",")
+                    .append(destination.getMiniMapY())
+                    .append("]");
+        } else {
+            mapping.append(" [?,?]");
+        }
+
+        mappings.add(mapping.toString());
+    }
+
+    private Room getDestinationRoomForExit(Room fromRoom, Exit exit) {
+        Pair<Room> endpoints = this.graph.getEndpoints(exit);
+        if (endpoints == null) {
+            return null;
+        }
+
+        if (fromRoom.equals(endpoints.getFirst())) {
+            return endpoints.getSecond();
+        }
+        if (fromRoom.equals(endpoints.getSecond())) {
+            return endpoints.getFirst();
+        }
+        return null;
+    }
+
+    private boolean isCardinalDirection(String direction) {
+        if (direction == null) {
+            return false;
+        }
+        return direction.equals("n") || direction.equals("s") || direction.equals("e") || direction.equals("w");
     }
 
 }

@@ -1,0 +1,14 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build batmapper (ant jar)",
+			"type": "shell",
+			"command": "ant",
+			"args": [
+				"jar"
+			],
+			"isBackground": false
+		}
+	]
+}

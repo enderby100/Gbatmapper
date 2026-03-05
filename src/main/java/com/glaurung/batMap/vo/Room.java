@@ -4,7 +4,9 @@ import java.awt.Color;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 public class Room implements Serializable {
@@ -25,6 +27,9 @@ public class Room implements Serializable {
     private Color color = null;
     private String label;
     private Set<String> usedExits = new HashSet<>();
+    private Map<String, String> cardinalExitTargets = new HashMap<>();
+    private Integer miniMapX;
+    private Integer miniMapY;
 
     public Room(String shortDesc, String id) {
         this.shortDesc = shortDesc;
@@ -205,5 +210,63 @@ public class Room implements Serializable {
 
     public void resetExitUsage() {
         this.usedExits = new HashSet<>();
+    }
+
+    public Integer getMiniMapX() {
+        return miniMapX;
+    }
+
+    public Integer getMiniMapY() {
+        return miniMapY;
+    }
+
+    public void setMiniMapCoordinate(Integer miniMapX, Integer miniMapY) {
+        this.miniMapX = miniMapX;
+        this.miniMapY = miniMapY;
+    }
+
+    public boolean hasMiniMapCoordinate() {
+        return miniMapX != null && miniMapY != null;
+    }
+
+    public void setCardinalExitTarget(String cardinalDir, String targetRoomId) {
+        if (this.cardinalExitTargets == null) {
+            this.cardinalExitTargets = new HashMap<>();
+        }
+        if (targetRoomId == null || !isCardinalDirection(cardinalDir)) {
+            return;
+        }
+        this.cardinalExitTargets.put(cardinalDir.toLowerCase(), targetRoomId);
+    }
+
+    public String getCardinalExitTarget(String cardinalDir) {
+        if (this.cardinalExitTargets == null || cardinalDir == null) {
+            return null;
+        }
+        return this.cardinalExitTargets.get(cardinalDir.toLowerCase());
+    }
+
+    public Map<String, String> getCardinalExitTargets() {
+        if (this.cardinalExitTargets == null) {
+            this.cardinalExitTargets = new HashMap<>();
+        }
+        return new HashMap<>(this.cardinalExitTargets);
+    }
+
+    public void clearCardinalExitTargets() {
+        if (this.cardinalExitTargets == null) {
+            this.cardinalExitTargets = new HashMap<>();
+            return;
+        }
+        this.cardinalExitTargets.clear();
+    }
+
+    private boolean isCardinalDirection(String direction) {
+        if (direction == null) {
+            return false;
+        }
+        String normalizedDirection = direction.toLowerCase();
+        return normalizedDirection.equals("n") || normalizedDirection.equals("s")
+                || normalizedDirection.equals("e") || normalizedDirection.equals("w");
     }
 }
