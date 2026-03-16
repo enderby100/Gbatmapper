@@ -67,6 +67,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
     String miniMapParseStatus = "Minimap parser not run yet.";
     LinkedList<Point> pathBehindCoordinates = new LinkedList<Point>();
     Point lastSeenWainoCoordinate = null;
+    String lastTrackedWainoRoomId = null;
     boolean wainoCoordinateChangedSinceLastPacket = false;
 
     public MapperEngine(SparseMultigraph<Room, Exit> graph, MapperPlugin plugin) {
@@ -690,6 +691,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
         this.miniMapParseStatus = "Minimap parser not run yet.";
         this.pathBehindCoordinates.clear();
         this.lastSeenWainoCoordinate = null;
+        this.lastTrackedWainoRoomId = null;
         this.wainoCoordinateChangedSinceLastPacket = false;
     }
 
@@ -782,7 +784,7 @@ public class MapperEngine implements ItemListener, ComponentListener {
     }
 
     private void printExitMappingCreatedMessage(String sourceRoomId, String direction, String targetRoomId) {
-        if (this.plugin == null) {
+        if (this.plugin == null || !this.wainoModeEnabled) {
             return;
         }
 
@@ -858,24 +860,46 @@ public class MapperEngine implements ItemListener, ComponentListener {
             if (this.lastSeenWainoCoordinate == null || !this.lastSeenWainoCoordinate.equals(wainoCoordinate)) {
                 this.wainoCoordinateChangedSinceLastPacket = true;
             }
-            this.lastSeenWainoCoordinate = new Point(wainoCoordinate.x, wainoCoordinate.y);
+            this.lastSeenWainoCoordinate = copyCoordinate(wainoCoordinate);
 
             if (currentCoordinate.equals(wainoCoordinate)) {
                 this.pathBehindCoordinates.clear();
-                this.pathBehindCoordinates.addLast(currentCoordinate);
+                this.pathBehindCoordinates.addLast(copyCoordinate(currentCoordinate));
+                this.lastTrackedWainoRoomId = room.getId();
                 return;
             }
+
+            List<Room> rebuiltPath = rebuildTrackedPathFromWainoCoordinate(wainoCoordinate, room);
+            if (!rebuiltPath.isEmpty()) {
+                this.pathBehindCoordinates.clear();
+                for (Room pathRoom : rebuiltPath) {
+                    Point pathCoordinate = getRoomMiniMapCoordinate(pathRoom);
+                    if (pathCoordinate == null) {
+                        continue;
+                    }
+                    if (this.pathBehindCoordinates.isEmpty()
+                            || !pathCoordinate.equals(this.pathBehindCoordinates.getLast())) {
+                        this.pathBehindCoordinates.addLast(copyCoordinate(pathCoordinate));
+                    }
+                }
+
+                while (this.pathBehindCoordinates.size() > PATH_BEHIND_MAX_ENTRIES) {
+                    this.pathBehindCoordinates.removeFirst();
+                }
+
+                this.lastTrackedWainoRoomId = rebuiltPath.get(0).getId();
+                return;
+            }
+
+            this.pathBehindCoordinates.clear();
+            this.lastTrackedWainoRoomId = null;
+            return;
         } else {
             this.lastSeenWainoCoordinate = null;
         }
 
-        if (this.wainoCoordinateChangedSinceLastPacket && !this.pathBehindCoordinates.isEmpty()) {
-            Point lastCoordinate = this.pathBehindCoordinates.getLast();
-            if (currentCoordinate.equals(lastCoordinate)) {
-                this.pathBehindCoordinates.clear();
-                this.pathBehindCoordinates.addLast(currentCoordinate);
-                return;
-            }
+        if (this.pathBehindCoordinates.isEmpty()) {
+            return;
         }
 
         if (!this.pathBehindCoordinates.isEmpty()) {
@@ -885,11 +909,123 @@ public class MapperEngine implements ItemListener, ComponentListener {
             }
         }
 
-        this.pathBehindCoordinates.addLast(currentCoordinate);
+        this.pathBehindCoordinates.addLast(copyCoordinate(currentCoordinate));
 
         while (this.pathBehindCoordinates.size() > PATH_BEHIND_MAX_ENTRIES) {
             this.pathBehindCoordinates.removeFirst();
         }
+    }
+
+    private List<Room> rebuildTrackedPathFromWainoCoordinate(Point wainoCoordinate, Room currentRoom) {
+        if (wainoCoordinate == null || currentRoom == null) {
+            return Collections.emptyList();
+        }
+
+        List<Room> candidateRooms = getRoomsAtMiniMapCoordinate(wainoCoordinate);
+        if (candidateRooms.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        DijkstraShortestPath<Room, Exit> algorithm = new DijkstraShortestPath<Room, Exit>(this.getGraph());
+        Room bestCandidate = null;
+        List<Exit> bestExitPath = null;
+        boolean bestCandidateMatchesPrevious = false;
+
+        for (Room candidateRoom : candidateRooms) {
+            if (candidateRoom == null) {
+                continue;
+            }
+
+            List<Exit> candidateExitPath = algorithm.getPath(candidateRoom, currentRoom);
+            if (candidateExitPath == null) {
+                continue;
+            }
+
+            boolean candidateMatchesPrevious = this.lastTrackedWainoRoomId != null
+                    && this.lastTrackedWainoRoomId.equals(candidateRoom.getId());
+
+            if (bestCandidate == null
+                    || (candidateMatchesPrevious && !bestCandidateMatchesPrevious)
+                    || (candidateMatchesPrevious == bestCandidateMatchesPrevious
+                            && candidateExitPath.size() < bestExitPath.size())
+                    || (candidateMatchesPrevious == bestCandidateMatchesPrevious
+                            && candidateExitPath.size() == bestExitPath.size()
+                            && safeRoomId(candidateRoom).compareToIgnoreCase(safeRoomId(bestCandidate)) < 0)) {
+                bestCandidate = candidateRoom;
+                bestExitPath = candidateExitPath;
+                bestCandidateMatchesPrevious = candidateMatchesPrevious;
+            }
+        }
+
+        if (bestCandidate == null) {
+            return Collections.emptyList();
+        }
+
+        return buildRoomPath(bestCandidate, bestExitPath);
+    }
+
+    private List<Room> getRoomsAtMiniMapCoordinate(Point coordinate) {
+        List<Room> matchingRooms = new ArrayList<Room>();
+        if (coordinate == null) {
+            return matchingRooms;
+        }
+
+        for (Room candidateRoom : this.graph.getVertices()) {
+            Point candidateCoordinate = getRoomMiniMapCoordinate(candidateRoom);
+            if (candidateCoordinate != null && candidateCoordinate.equals(coordinate)) {
+                matchingRooms.add(candidateRoom);
+            }
+        }
+
+        return matchingRooms;
+    }
+
+    private List<Room> buildRoomPath(Room startRoom, List<Exit> exitPath) {
+        List<Room> roomPath = new ArrayList<Room>();
+        if (startRoom == null) {
+            return roomPath;
+        }
+
+        Room currentPathRoom = startRoom;
+        roomPath.add(currentPathRoom);
+
+        if (exitPath == null) {
+            return roomPath;
+        }
+
+        for (Exit exit : exitPath) {
+            if (exit == null) {
+                return Collections.emptyList();
+            }
+
+            Pair<Room> endpoints = this.graph.getEndpoints(exit);
+            if (endpoints == null) {
+                return Collections.emptyList();
+            }
+
+            Room nextRoom = null;
+            if (currentPathRoom.equals(endpoints.getFirst())) {
+                nextRoom = endpoints.getSecond();
+            } else if (currentPathRoom.equals(endpoints.getSecond())) {
+                nextRoom = endpoints.getFirst();
+            }
+
+            if (nextRoom == null) {
+                return Collections.emptyList();
+            }
+
+            roomPath.add(nextRoom);
+            currentPathRoom = nextRoom;
+        }
+
+        return roomPath;
+    }
+
+    private String safeRoomId(Room room) {
+        if (room == null || room.getId() == null) {
+            return "";
+        }
+        return room.getId();
     }
 
     public String getPathBehindStatus() {
