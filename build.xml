@@ -14,7 +14,7 @@
     <property name="build.classes.dir" location="${build.dir}/classes"/>
     <property name="build.test.dir" location="${build.dir}/test-classes"/>
     <property name="lib.dir" location="${build.dir}/lib"/>
-    <property name="output.dir" location="C:/Users/eprice/batclient/plugins"/>
+    <property name="output.dir" location="C:/Users/Ethan Price/batclient/plugins"/>
     <property name="jar.name" value="${project.name}-${project.version}-full.jar"/>
 
     <!-- Maven Central URLs for dependencies -->
