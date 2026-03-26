@@ -17,7 +17,7 @@ This will:
 1. Download all dependencies from Maven Central (if not already present)
 2. Compile the source code
 3. Create a fat JAR with all dependencies included
-4. Output the JAR to: `C:\Users\eprice\batclient\plugins\batUtils-1.6.3-full.jar`
+4. Output the JAR to: `C:\Users\Ethan Price\batclient\plugins\batUtils-1.6.3-full.jar`
 
 ### Clean build artifacts
 ```bash
@@ -60,7 +60,7 @@ The `bat_interfaces-1.jar` is copied from the local `repo/` directory.
 
 The final JAR is created at:
 ```
-C:\Users\eprice\batclient\plugins\batUtils-1.6.3-full.jar
+C:\Users\Ethan Price\batclient\plugins\batUtils-1.6.3-full.jar
 ```
 
 This is a "fat JAR" containing all dependencies, ready to be used as a plugin.
@@ -69,7 +69,7 @@ This is a "fat JAR" containing all dependencies, ready to be used as a plugin.
 
 To change the output directory, edit the `output.dir` property in `build.xml`:
 ```xml
-<property name="output.dir" location="C:/Users/eprice/batclient/plugins"/>
+<property name="output.dir" location="C:/Users/Ethan Price/batclient/plugins"/>
 ```
 
 To change the version number, edit the `project.version` property in `build.xml`:
